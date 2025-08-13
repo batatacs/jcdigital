@@ -1,0 +1,1514 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="scroll-smooth">
+
+<head>
+    <!-- Author: Anderson D Camilo -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JC digital Agency - Cursos e Soluções para E-commerce</title>
+    <meta name="description"
+        content="Aprenda a criar sua loja online do zero sem estoque ou contrate nossa agência para fazer por você. Transformamos ideias em negócios digitais lucrativos.">
+
+    <!-- Favicon (Logo na Aba do Navegador) -->
+    <!-- IMPORTANTE: Salve seu arquivo de logo como 'logo.png' na mesma pasta deste arquivo HTML. -->
+    <link rel="icon" href="logo.png" type="image/png">
+    <link rel="apple-touch-icon" href="logo.png">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Google Fonts: Poppins -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet">
+
+    <!-- Alpine.js para interatividade -->
+    <!-- O listener do Alpine.js deve ser registrado ANTES do script do Alpine ser carregado. -->
+    <script>
+        document.addEventListener('alpine:init', () => {
+            // Função helper para chamar a API do Gemini (Texto)
+            const callGemini = async (prompt) => {
+                const apiKey = ""; // A chave da API será injetada pelo ambiente
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                });
+                if (!response.ok) throw new Error(`Erro na API: ${response.statusText}`);
+                const data = await response.json();
+                if (data.candidates && data.candidates.length > 0 && data.candidates[0].content.parts.length > 0) {
+                    return data.candidates[0].content.parts[0].text;
+                }
+                throw new Error('A resposta da API não contém o conteúdo esperado.');
+            };
+
+            // Função helper para chamar a API de Imagem (Imagen)
+            const callImageAPI = async (prompt) => {
+                const payload = { instances: [{ prompt: prompt }], parameters: { "sampleCount": 1 } };
+                const apiKey = "";
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`;
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!response.ok) throw new Error(`Erro na API de Imagem: ${response.statusText}`);
+                const result = await response.json();
+                if (result.predictions && result.predictions.length > 0 && result.predictions[0].bytesBase64Encoded) {
+                    return `data:image/png;base64,${result.predictions[0].bytesBase64Encoded}`;
+                }
+                throw new Error('A resposta da API de imagem não contém os dados esperados.');
+            };
+
+            // Store global para controlar o modal de resultados da IA
+            Alpine.store('aiModal', {
+                show: false,
+                title: '',
+                content: '',
+                rawContent: '',
+                copyText: 'Copiar Texto',
+                open(title, content) {
+                    this.title = title;
+                    this.rawContent = content.replace(/<br>/g, "\n").replace(/<strong>(.*?)<\/strong>/g, '$1').replace(/•/g, '*');
+                    this.content = content;
+                    this.show = true;
+                    this.copyText = 'Copiar Texto';
+                },
+                close() {
+                    this.show = false;
+                },
+                copyToClipboard() {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = this.rawContent;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    this.copyText = 'Copiado!';
+                    setTimeout(() => { this.copyText = 'Copiar Texto'; }, 2000);
+                }
+            });
+
+            // Store global para o modal de vídeo
+            Alpine.store('videoModal', {
+                show: false,
+                videoUrl: '',
+                open(url) {
+                    this.videoUrl = url;
+                    this.show = true;
+                },
+                close() {
+                    this.show = false;
+                    this.videoUrl = '';
+                }
+            });
+
+            // Componente para o Quiz de Maturidade Digital
+            Alpine.data('digitalQuiz', () => ({
+                step: 1,
+                totalSteps: 4,
+                answers: {},
+                score: 0,
+                result: '',
+                isLoading: false,
+                error: '',
+                questions: [
+                    { id: 'website', text: 'Como está a presença online da sua loja (site ou e-commerce)?', options: [{ text: 'Não tenho site/e-commerce', points: 0 }, { text: 'Tenho um site simples, mas não vende', points: 1 }, { text: 'Tenho um e-commerce funcional que gera vendas', points: 2 }] },
+                    { id: 'social', text: 'Como você descreveria sua atividade nas redes sociais?', options: [{ text: 'Não posto com frequência', points: 0 }, { text: 'Posto de vez em quando, sem estratégia', points: 1 }, { text: 'Tenho um calendário e posto conteúdo relevante regularmente', points: 2 }] },
+                    { id: 'ads', text: 'Você investe em anúncios online (Google, Instagram, Facebook)?', options: [{ text: 'Nunca investi', points: 0 }, { text: 'Já tentei, mas não tive retorno', points: 1 }, { text: 'Invisto regularmente e tenho bons resultados', points: 2 }] },
+                ],
+                nextStep(questionId, points, answerText) {
+                    this.answers[questionId] = answerText;
+                    this.score += points;
+                    if (this.step < this.totalSteps - 1) {
+                        this.step++;
+                    } else {
+                        this.generateAnalysis();
+                        this.step = this.totalSteps;
+                    }
+                },
+                async generateAnalysis() {
+                    this.isLoading = true;
+                    this.error = '';
+                    let resultLevel = '';
+                    if (this.score <= 2) resultLevel = 'Iniciante';
+                    else if (this.score <= 4) resultLevel = 'Em Desenvolvimento';
+                    else resultLevel = 'Avançado';
+                    const prompt = `Aja como um consultor de marketing digital. Um lojista respondeu a um quiz de maturidade digital e obteve o nível "${resultLevel}" com uma pontuação de ${this.score} de 6. As respostas foram:\n- Site/E-commerce: "${this.answers.website}"\n- Redes Sociais: "${this.answers.social}"\n- Anúncios: "${this.answers.ads}"\n\nCom base nisso, crie uma análise curta e personalizada:\n1. **Seu Nível Atual:** Apresente o nível (${resultLevel}) e explique brevemente o que significa.\n2. **Ponto Forte:** Identifique o ponto mais forte com base nas respostas.\n3. **Principal Oportunidade:** Aponte a área com maior potencial de melhoria.\n4. **Próximo Passo Recomendado:** Dê uma sugestão prática e acionável como próximo passo.\n\nFormate a resposta de forma clara, usando títulos em negrito. O tom deve ser encorajador e profissional.`;
+                    try {
+                        const resultText = await callGemini(prompt);
+                        this.result = `<strong>Seu Nível: ${resultLevel} (Pontuação: ${this.score}/6)</strong><br><br>` + resultText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*/g, '•').replace(/(\r\n|\n|\r)/gm, "<br>");
+                    } catch (e) {
+                        this.error = 'Desculpe, não foi possível gerar sua análise. Tente novamente.';
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+                reset() {
+                    this.step = 1;
+                    this.answers = {};
+                    this.score = 0;
+                    this.result = '';
+                    this.error = '';
+                }
+            }));
+
+            // Componente para o Gerador de Logo
+            Alpine.data('logoGenerator', () => ({
+                view: 'form', // form, loading, reveal
+                formData: { businessName: '', industry: '', style: 'minimalista', contactName: '', contactPhone: '' },
+                generatedLogoUrl: '',
+                error: '',
+                isLoading: false,
+                logoRevealed: false,
+                async generateLogo() {
+                    if (!this.formData.businessName.trim() || !this.formData.industry.trim()) {
+                        this.error = 'Por favor, preencha o nome e o ramo do seu negócio.';
+                        return;
+                    }
+                    this.isLoading = true;
+                    this.error = '';
+                    this.view = 'loading';
+                    const prompt = `logo for a company called "${this.formData.businessName}", in the industry of "${this.formData.industry}". The desired style is: ${this.formData.style}. Vector art, clean, on a white background.`;
+                    try {
+                        this.generatedLogoUrl = await callImageAPI(prompt);
+                        this.view = 'reveal';
+                    } catch (e) {
+                        console.error(e);
+                        this.error = 'Desculpe, não foi possível gerar seu logo. Tente novamente.';
+                        this.view = 'form';
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+                revealAndContact() {
+                    if (!this.formData.contactName.trim() || !this.formData.contactPhone.trim()) {
+                        this.error = 'Preencha seu nome e WhatsApp para revelar o logo.';
+                        return;
+                    }
+                    this.error = '';
+                    const yourNumber = '5511999998888';
+                    const text = `Olá! Gerei um logo no site da JC digital Agency!\n\nNome da Empresa: ${this.formData.businessName}\nMeu Nome: ${this.formData.contactName}\nMeu WhatsApp: ${this.formData.contactPhone}\n\nGostaria de ver meu logo e conversar sobre os próximos passos.`;
+                    const encodedText = encodeURIComponent(text);
+                    const whatsappUrl = `https://wa.me/${yourNumber}?text=${encodedText}`;
+                    window.open(whatsappUrl, '_blank');
+                    this.logoRevealed = true;
+                },
+                reset() {
+                    this.view = 'form';
+                    this.formData.businessName = '';
+                    this.formData.industry = '';
+                    this.formData.style = 'minimalista';
+                    this.generatedLogoUrl = '';
+                    this.error = '';
+                    this.logoRevealed = false;
+                }
+            }));
+
+            // Demais componentes de IA
+            Alpine.data('ideaGenerator', () => ({ storeType: '', isLoading: false, error: '', async generateIdeas() { if (!this.storeType.trim()) { this.error = 'Por favor, digite o tipo da sua loja.'; return; } this.isLoading = true; this.error = ''; const prompt = `Aja como um especialista em marketing de social media para o varejo. Gere 3 ideias de posts criativos e que vendem para o Instagram de uma ${this.storeType}. Formate a resposta de forma clara, separando cada ideia com um título em negrito. O tom deve ser profissional, mas acessível.`; try { const resultText = await callGemini(prompt); const formattedResult = resultText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*/g, '').replace(/(\r\n|\n|\r)/gm, "<br>"); Alpine.store('aiModal').open('Ideias de Posts', formattedResult); } catch (e) { this.error = 'Desculpe, não foi possível gerar as ideias no momento.'; } finally { this.isLoading = false; } } }));
+            Alpine.data('profileAnalyzer', () => ({ instagramHandle: '', businessDescription: '', isLoading: false, error: '', async analyzeProfile() { if (!this.instagramHandle.trim() || !this.businessDescription.trim()) { this.error = 'Por favor, preencha ambos os campos.'; return; } this.isLoading = true; this.error = ''; const prompt = `Aja como um consultor de marketing digital. Para um perfil no Instagram ('${this.instagramHandle}') de um negócio ('${this.businessDescription}'), forneça: 1. **Sugestão de Bio Otimizada:** Curta e impactante. 2. **3 Pilares de Conteúdo:** Sugestões de temas para posts. 3. **CTA para a Bio:** Uma chamada para ação eficaz. Formate com títulos em negrito.`; try { const resultText = await callGemini(prompt); const formattedResult = resultText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*/g, '').replace(/(\r\n|\n|\r)/gm, "<br>"); Alpine.store('aiModal').open('Análise de Perfil', formattedResult); } catch (e) { this.error = 'Desculpe, não foi possível analisar o perfil no momento.'; } finally { this.isLoading = false; } } }));
+            Alpine.data('adGenerator', () => ({ productName: '', targetAudience: '', isLoading: false, error: '', async generateAd() { if (!this.productName.trim() || !this.targetAudience.trim()) { this.error = 'Por favor, preencha o nome do produto e o público-alvo.'; return; } this.isLoading = true; this.error = ''; const prompt = `Aja como um copywriter sênior. Crie 3 opções de texto curto e persuasivo para um anúncio no Instagram/Facebook. Produto: ${this.productName}. Público-Alvo: ${this.targetAudience}. O texto deve ter um gancho forte, destacar o principal benefício e incluir uma CTA clara. Formate com títulos em negrito.`; try { const resultText = await callGemini(prompt); const formattedResult = resultText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*/g, '').replace(/(\r\n|\n|\r)/gm, "<br>"); Alpine.store('aiModal').open('Textos para Anúncios', formattedResult); } catch (e) { this.error = 'Desculpe, não foi possível gerar os textos no momento.'; } finally { this.isLoading = false; } } }));
+            Alpine.data('hashtagStrategist', () => ({ postTopic: '', isLoading: false, error: '', async generateHashtags() { if (!this.postTopic.trim()) { this.error = 'Por favor, descreva sobre o que é o seu post.'; return; } this.isLoading = true; this.error = ''; const prompt = `Aja como um estrategista de mídias sociais. Crie uma estratégia de hashtags para um post sobre: "${this.postTopic}". A estratégia deve incluir 3 categorias com 3-5 hashtags cada: **Hashtags de Nicho**, **Hashtags de Comunidade** e **Hashtags de Amplo Alcance**. Formate com títulos em negrito.`; try { const resultText = await callGemini(prompt); const formattedResult = resultText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*/g, '').replace(/(\r\n|\n|\r)/gm, "<br>"); Alpine.store('aiModal').open('Estratégia de Hashtags', formattedResult); } catch (e) { this.error = 'Desculpe, não foi possível gerar as hashtags no momento.'; } finally { this.isLoading = false; } } }));
+            Alpine.data('productDescriber', () => ({ productName: '', keyFeatures: '', isLoading: false, error: '', async generateDescription() { if (!this.productName.trim() || !this.keyFeatures.trim()) { this.error = 'Preencha o nome do produto e suas características.'; return; } this.isLoading = true; this.error = ''; const prompt = `Aja como um copywriter de e-commerce especialista em produtos de varejo. Crie uma descrição de produto persuasiva e otimizada para SEO.\n\n**Nome do Produto:** ${this.productName}\n**Características Principais:** ${this.keyFeatures}\n\nA descrição deve conter:\n1. **Título Criativo:** Um nome que chame a atenção.\n2. **Parágrafo Introdutório:** Um texto curto e envolvente que use storytelling para conectar o produto ao desejo do cliente.\n3. **Lista de Benefícios:** Transforme as características em 3-4 benefícios claros (use bullet points).\n4. **Chamada para Ação (CTA):** Uma frase final que incentive a compra.\n\nFormate a resposta de forma clara, usando títulos em negrito.`; try { const resultText = await callGemini(prompt); const formattedResult = resultText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*/g, '•').replace(/(\r\n|\n|\r)/gm, "<br>"); Alpine.store('aiModal').open('Descrição de Produto', formattedResult); } catch (e) { this.error = 'Desculpe, não foi possível gerar a descrição no momento.'; } finally { this.isLoading = false; } } }));
+            Alpine.data('gmbOptimizer', () => ({ businessName: '', businessType: '', keyServices: '', isLoading: false, error: '', async optimizeProfile() { if (!this.businessName.trim() || !this.businessType.trim() || !this.keyServices.trim()) { this.error = 'Por favor, preencha todos os campos.'; return; } this.isLoading = true; this.error = ''; const prompt = `Aja como um especialista em SEO Local. Para um negócio chamado "${this.businessName}", que é um(a) "${this.businessType}" e cujos principais produtos/serviços são "${this.keyServices}", crie o seguinte para o Perfil da Empresa no Google (Google Business Profile):\n\n1. **Descrição Otimizada (750 caracteres máx):** Um parágrafo que descreva o negócio, inclua palavras-chave relevantes e incentive uma visita ou contato.\n2. **Categorias e Serviços:** Sugira a categoria principal e 3-5 serviços secundários para adicionar ao perfil.\n3. **3 Ideias de Posts para o Google:** Sugestões de posts curtos para destacar produtos, ofertas ou novidades.\n\nFormate a resposta de forma clara, usando títulos em negrito para cada seção.`; try { const resultText = await callGemini(prompt); const formattedResult = resultText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*/g, '•').replace(/(\r\n|\n|\r)/gm, "<br>"); Alpine.store('aiModal').open('Otimização para Google', formattedResult); } catch (e) { this.error = 'Desculpe, não foi possível otimizar o perfil no momento.'; } finally { this.isLoading = false; } } }));
+            Alpine.data('nicheFinder', () => ({ interestArea: '', isLoading: false, error: '', async findNiche() { if (!this.interestArea.trim()) { this.error = 'Por favor, insira uma área de interesse.'; return; } this.isLoading = true; this.error = ''; const prompt = `Aja como um consultor de e-commerce e especialista em branding. Para a área de interesse "${this.interestArea}", gere o seguinte:\n\n1. **3 Sugestões de Nicho de Mercado:** Subcategorias específicas e com potencial de lucro.\n2. **5 Nomes Criativos para Loja:** Para cada um dos nichos sugeridos.\n3. **1 Slogan/Bio Curta:** Para o primeiro nome sugerido em cada nicho.\n\nFormate a resposta de forma clara, usando títulos em negrito.`; try { const resultText = await callGemini(prompt); const formattedResult = resultText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*/g, '').replace(/(\r\n|\n|\r)/gm, "<br>"); Alpine.store('aiModal').open('Ideias de Negócio', formattedResult); } catch (e) { this.error = 'Desculpe, não foi possível gerar as ideias no momento.'; } finally { this.isLoading = false; } } }));
+
+            // Componente para o formulário de contato
+            Alpine.data('contactForm', () => ({
+                formData: {
+                    name: '',
+                    email: '',
+                    message: ''
+                },
+                submitToWhatsApp() {
+                    // IMPORTANTE: Substitua '5511999998888' pelo seu número de WhatsApp com código do país e DDD.
+                    const yourNumber = '5511999998888';
+
+                    const text = `Olá! Meu nome é ${this.formData.name}.\n\nE-mail: ${this.formData.email}\n\nLoja/Instagram: ${this.formData.message}\n\nTenho interesse nos serviços da JC digital Agency e gostaria de agendar uma conversa.`;
+
+                    const encodedText = encodeURIComponent(text);
+
+                    const whatsappUrl = `https://wa.me/${yourNumber}?text=${encodedText}`;
+
+                    window.open(whatsappUrl, '_blank');
+                }
+            }));
+        });
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+    <style>
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: #111827;
+            /* bg-gray-900 */
+        }
+
+        .text-gradient {
+            background: linear-gradient(90deg, #22d3ee, #14b8a6);
+            /* cyan-400 to teal-500 */
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-fill-color: transparent;
+        }
+
+        .glow-effect {
+            box-shadow: 0 0 15px rgba(34, 211, 238, 0.3), 0 0 30px rgba(20, 184, 166, 0.2);
+        }
+
+        .fade-in {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+        }
+
+        .fade-in.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Estilo para o resultado da IA */
+        .ai-result {
+            white-space: pre-wrap;
+            /* Mantém a formatação do texto gerado */
+            background-color: rgba(17, 24, 39, 0.5);
+            border: 1px solid #374151;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            margin-top: 1.5rem;
+            font-family: monospace;
+            color: #d1d5db;
+            line-height: 1.7;
+        }
+
+        .ai-result strong {
+            color: #22d3ee;
+            /* cyan-400 */
+            font-weight: 600;
+        }
+
+        /* Novos estilos para a seção de serviços */
+        .service-card {
+            position: relative;
+            border-bottom: 1px solid #374151;
+            /* border-gray-700 */
+            padding: 2rem 0;
+            overflow: hidden;
+        }
+
+        .service-card:hover .service-hover-img {
+            opacity: 0.1;
+            transform: translateX(0) scale(1);
+        }
+
+        .service-card-item {
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .service-left-info {
+            flex: 1;
+            min-width: 250px;
+        }
+
+        .service-title {
+            font-size: 1.875rem;
+            /* text-3xl */
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 1.5rem;
+        }
+
+        .service-lists {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            space-y: 0.5rem;
+        }
+
+        .service-list {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: #d1d5db;
+            /* text-gray-300 */
+        }
+
+        .service-list svg {
+            width: 1rem;
+            height: 1rem;
+            color: #22d3ee;
+            /* cyan-400 */
+        }
+
+        .service-left-right {
+            flex: 1.5;
+            min-width: 300px;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .service-desp {
+            color: #9ca3af;
+            /* text-gray-400 */
+            line-height: 1.7;
+            flex: 2;
+        }
+
+        .service-btn-content {
+            flex: 1;
+            text-align: right;
+        }
+
+        .more-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #ffffff;
+            font-weight: 600;
+            padding: 0.75rem 1.5rem;
+            border: 1px solid #374151;
+            border-radius: 9999px;
+            transition: all 0.3s ease;
+        }
+
+        .more-btn:hover {
+            background-color: #14b8a6;
+            /* teal-500 */
+            border-color: #14b8a6;
+        }
+
+        .more-btn .primary-icon-anim {
+            display: flex;
+            transition: transform 0.3s ease;
+        }
+
+        .more-btn:hover .primary-icon-anim {
+            transform: rotate(45deg);
+        }
+
+        .service-stroke-number {
+            position: absolute;
+            right: 2rem;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 6rem;
+            font-weight: 800;
+            color: transparent;
+            -webkit-text-stroke: 1px rgba(255, 255, 255, 0.1);
+            z-index: -1;
+            transition: all 0.3s ease;
+        }
+
+        .service-hover-img {
+            position: absolute;
+            top: 0;
+            right: 0;
+            height: 100%;
+            opacity: 0;
+            transform: translateX(100px) scale(1.2);
+            transition: all 0.4s ease-in-out;
+            z-index: -1;
+        }
+
+        @media (max-width: 768px) {
+            .service-left-right {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 1.5rem;
+            }
+
+            .service-btn-content {
+                text-align: left;
+            }
+
+            .service-stroke-number {
+                font-size: 4rem;
+                right: 1rem;
+            }
+        }
+
+        /* Estilo do Preloader */
+        .preloader {
+            position: fixed;
+            inset: 0;
+            background-color: #111827;
+            z-index: 100;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 0.5s ease-out;
+        }
+
+        .preloader .txt-loading {
+            text-align: center;
+        }
+
+        .preloader-text-container {
+            position: relative;
+            height: 40px;
+            /* Ajuste a altura conforme o tamanho da fonte */
+            width: 100%;
+            min-width: 300px;
+        }
+
+        .preloader-text {
+            position: absolute;
+            width: 100%;
+            left: 0;
+            top: 0;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+            font-size: 1.5rem;
+            /* text-2xl */
+            font-weight: 600;
+            color: #9ca3af;
+            /* text-gray-400 */
+        }
+
+        .preloader-text.active {
+            opacity: 1;
+        }
+
+        .loading-percent {
+            color: #9ca3af;
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+
+<body class="text-gray-200 antialiased">
+
+    <!-- Preloader -->
+    <div id="preloader" class="preloader">
+        <div class="txt-loading">
+            <div class="preloader-text-container">
+                <span class="preloader-text active">Bem-vindo...</span>
+                <span class="preloader-text">Analisando o futuro do seu negócio...</span>
+                <span class="preloader-text">Carregando sua jornada digital...</span>
+            </div>
+            <div class="loading-percent mt-4">0%</div>
+        </div>
+    </div>
+
+    <!-- Cabeçalho -->
+    <header x-data="{ isOpen: false }" class="bg-gray-900/80 backdrop-blur-sm sticky top-0 z-50">
+        <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <a href="#" class="text-2xl font-bold text-white">
+                <!-- IMPORTANTE: Salve seu arquivo de logo como 'logo.png' na mesma pasta deste arquivo HTML. -->
+                <img src="logo.png" alt="JC digital Agency Logo" class="h-12 w-auto"
+                    onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                <span style="display:none;">JC<span class="text-cyan-400">.</span></span>
+            </a>
+            <div class="hidden md:flex space-x-8 items-center">
+                <a href="#services" class="hover:text-cyan-400 transition-colors duration-300">Soluções</a>
+                <a href="#process" class="hover:text-cyan-400 transition-colors duration-300">Nosso Processo</a>
+                <a href="#cases" class="hover:text-cyan-400 transition-colors duration-300">Depoimentos</a>
+                <a href="#course" class="hover:text-cyan-400 transition-colors duration-300">Curso</a>
+                <a href="#ai-tools" class="hover:text-cyan-400 transition-colors duration-300">Ferramentas IA</a>
+                <a href="#about" class="hover:text-cyan-400 transition-colors duration-300">Sobre Nós</a>
+                <a href="#contact"
+                    class="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-5 rounded-full transition-transform duration-300 ease-in-out hover:scale-105">
+                    Fale Conosco
+                </a>
+            </div>
+            <div class="md:hidden">
+                <button @click="isOpen = !isOpen" class="text-white focus:outline-none">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                        xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 6h16M4 12h16m-7 6h7"></path>
+                    </svg>
+                </button>
+            </div>
+        </nav>
+        <!-- Menu Mobile -->
+        <div x-show="isOpen" @click.away="isOpen = false" class="md:hidden" x-transition>
+            <a href="#services" @click="isOpen = false" class="block py-2 px-4 text-sm hover:bg-gray-800">Soluções</a>
+            <a href="#process" @click="isOpen = false" class="block py-2 px-4 text-sm hover:bg-gray-800">Nosso
+                Processo</a>
+            <a href="#cases" @click="isOpen = false" class="block py-2 px-4 text-sm hover:bg-gray-800">Depoimentos</a>
+            <a href="#course" @click="isOpen = false" class="block py-2 px-4 text-sm hover:bg-gray-800">Curso</a>
+            <a href="#ai-tools" @click="isOpen = false" class="block py-2 px-4 text-sm hover:bg-gray-800">Ferramentas
+                IA</a>
+            <a href="#about" @click="isOpen = false" class="block py-2 px-4 text-sm hover:bg-gray-800">Sobre Nós</a>
+            <a href="#contact" @click="isOpen = false" class="block py-2 px-4 text-sm hover:bg-gray-800">Fale
+                Conosco</a>
+        </div>
+    </header>
+
+    <main class="opacity-0 transition-opacity duration-500">
+        <!-- Seção Herói -->
+        <section id="home" class="relative min-h-screen flex items-center justify-center overflow-hidden">
+            <div id="particles-js" class="absolute inset-0 z-0"></div>
+            <div class="container mx-auto px-6 text-center z-10">
+                <h1 class="text-4xl md:text-6xl lg:text-7xl font-extrabold text-white leading-tight mb-4 fade-in">
+                    Levamos sua loja para o <span class="text-gradient">mundo digital.</span>
+                </h1>
+                <p class="text-lg md:text-xl text-gray-300 max-w-3xl mx-auto mb-8 fade-in"
+                    style="transition-delay: 200ms;">
+                    Criamos seu e-commerce do zero e gerenciamos suas redes sociais para transformar seguidores em
+                    clientes fiéis e aumentar seu faturamento.
+                </p>
+                <a href="#contact"
+                    class="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-4 px-10 rounded-full transition-transform duration-300 ease-in-out hover:scale-105 inline-block glow-effect fade-in"
+                    style="transition-delay: 400ms;">
+                    Quero Multiplicar Minhas Vendas
+                </a>
+            </div>
+        </section>
+
+        <!-- Seção Nosso Processo -->
+        <section id="process" class="py-20 bg-gray-900/50">
+            <div class="container mx-auto px-6">
+                <div class="text-center mb-16 fade-in">
+                    <h2 class="text-4xl md:text-5xl font-bold text-white">Nosso Processo de <span
+                            class="text-gradient">Sucesso</span></h2>
+                    <p class="text-lg text-gray-400 mt-4 max-w-2xl mx-auto">Temos um método claro e eficiente para
+                        transformar sua ideia em um negócio digital lucrativo.</p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 text-center">
+                    <!-- Passo 1 -->
+                    <div class="fade-in" style="transition-delay: 100ms;">
+                        <div
+                            class="bg-gray-800/50 p-6 rounded-full w-24 h-24 mx-auto flex items-center justify-center border-2 border-cyan-400">
+                            <span class="text-4xl">1</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-white mt-6 mb-2">Diagnóstico e Imersão</h3>
+                        <p class="text-gray-400">Mergulhamos no seu negócio para entender seus objetivos, público e
+                            desafios.</p>
+                    </div>
+                    <!-- Passo 2 -->
+                    <div class="fade-in" style="transition-delay: 200ms;">
+                        <div
+                            class="bg-gray-800/50 p-6 rounded-full w-24 h-24 mx-auto flex items-center justify-center border-2 border-cyan-400">
+                            <span class="text-4xl">2</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-white mt-6 mb-2">Estratégia Personalizada</h3>
+                        <p class="text-gray-400">Desenhamos um plano de marketing sob medida para sua marca, focado em
+                            resultados.</p>
+                    </div>
+                    <!-- Passo 3 -->
+                    <div class="fade-in" style="transition-delay: 300ms;">
+                        <div
+                            class="bg-gray-800/50 p-6 rounded-full w-24 h-24 mx-auto flex items-center justify-center border-2 border-cyan-400">
+                            <span class="text-4xl">3</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-white mt-6 mb-2">Construção e Execução</h3>
+                        <p class="text-gray-400">Criamos seu e-commerce, ativamos suas redes sociais e lançamos suas
+                            campanhas.</p>
+                    </div>
+                    <!-- Passo 4 -->
+                    <div class="fade-in" style="transition-delay: 400ms;">
+                        <div
+                            class="bg-gray-800/50 p-6 rounded-full w-24 h-24 mx-auto flex items-center justify-center border-2 border-cyan-400">
+                            <span class="text-4xl">4</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-white mt-6 mb-2">Otimização e Crescimento</h3>
+                        <p class="text-gray-400">Acompanhamos os dados de perto, otimizando cada detalhe para garantir
+                            um crescimento contínuo.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Seção de Serviços -->
+        <section id="services" class="py-20">
+            <div class="container mx-auto px-6">
+                <div class="text-center mb-16 fade-in">
+                    <h2 class="text-4xl md:text-5xl font-bold text-white">Nossas <span
+                            class="text-gradient">Soluções</span></h2>
+                    <p class="text-lg text-gray-400 mt-4 max-w-2xl mx-auto">Do plano à execução, cobrimos todas as
+                        frentes para garantir o sucesso do seu negócio no ambiente digital.</p>
+                </div>
+
+                <div class="service-card fade-in">
+                    <img class="service-hover-img" src="https://placehold.co/400x400/111827/22d3ee?text=💡"
+                        alt="Imagem de Estratégia e Branding" />
+                    <div class="service-card-item">
+                        <div class="service-left-info">
+                            <h4 class="service-title">Estratégia e Branding Digital</h4>
+                            <ul class="service-lists">
+                                <li class="service-list">
+                                    <span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                                            fill="currentColor" class="w-6 h-6">
+                                            <path fill-rule="evenodd"
+                                                d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z"
+                                                clip-rule="evenodd" />
+                                        </svg></span>
+                                    <span> Análise de Mercado e Público </span>
+                                </li>
+                                <li class="service-list">
+                                    <span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                                            fill="currentColor" class="w-6 h-6">
+                                            <path fill-rule="evenodd"
+                                                d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z"
+                                                clip-rule="evenodd" />
+                                        </svg></span>
+                                    <span> Posicionamento de Marca Forte </span>
+                                </li>
+                                <li class="service-list">
+                                    <span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                                            fill="currentColor" class="w-6 h-6">
+                                            <path fill-rule="evenodd"
+                                                d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z"
+                                                clip-rule="evenodd" />
+                                        </svg></span>
+                                    <span> Plano de Marketing Integrado </span>
+                                </li>
+                            </ul>
+                        </div>
+                        <div class="service-left-right">
+                            <p class="service-desp">Tudo começa aqui. Mergulhamos no seu negócio para construir uma
+                                marca memorável e traçar um plano claro, garantindo que cada ação de marketing tenha um
+                                propósito e um caminho para o sucesso.</p>
+                            <div class="service-btn-content">
+                                <a href="#contact" class="more-btn">
+                                    <span class="morebtn-text"> Ver Detalhes </span>
+                                    <span class="primary-icon-anim"><svg xmlns="http://www.w3.org/2000/svg" fill="none"
+                                            viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" />
+                                        </svg></span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="service-stroke-number">01</div>
+                </div>
+
+                <div class="service-card fade-in">
+                    <img class="service-hover-img" src="https://placehold.co/400x400/111827/14b8a6?text=💻"
+                        alt="Imagem de Criação de Sites" />
+                    <div class="service-card-item">
+                        <div class="service-left-info">
+                            <h4 class="service-title">Criação de Sites e Landing Pages</h4>
+                            <ul class="service-lists">
+                                <li class="service-list">
+                                    <span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                                            fill="currentColor" class="w-6 h-6">
+                                            <path fill-rule="evenodd"
+                                                d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z"
+                                                clip-rule="evenodd" />
+                                        </svg></span>
+                                    <span> Design Focado na Experiência (UX/UI) </span>
+                                </li>
+                                <li class="service-list">
+                                    <span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                                            fill="currentColor" class="w-6 h-6">
+                                            <path fill-rule="evenodd"
+                                                d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z"
+                                                clip-rule="evenodd" />
+                                        </svg></span>
+                                    <span> Sites Rápidos e Otimizados (SEO) </span>
+                                </li>
+                                <li class="service-list">
+                                    <span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                                            fill="currentColor" class="w-6 h-6">
+                                            <path fill-rule="evenodd"
+                                                d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z"
+                                                clip-rule="evenodd" />
+                                        </svg></span>
+                                    <span> Páginas que Convertem Visitantes </span>
+                                </li>
+                            </ul>
+                        </div>
+                        <div class="service-left-right">
+                            <p class="service-desp">Seu site é seu principal território no mundo digital. Criamos
+                                plataformas visualmente impactantes, fáceis de usar e preparadas para transformar
+                                visitantes em clientes.</p>
+                            <div class="service-btn-content">
+                                <a href="#contact" class="more-btn">
+                                    <span class="morebtn-text"> Ver Detalhes </span>
+                                    <span class="primary-icon-anim"><svg xmlns="http://www.w3.org/2000/svg" fill="none"
+                                            viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" />
+                                        </svg></span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="service-stroke-number">02</div>
+                </div>
+
+                <div class="service-card fade-in">
+                    <img class="service-hover-img" src="https://placehold.co/400x400/111827/22d3ee?text=📈"
+                        alt="Imagem de Gestão de Tráfego" />
+                    <div class="service-card-item">
+                        <div class="service-left-info">
+                            <h4 class="service-title">Gestão de Tráfego e SEO</h4>
+                            <ul class="service-lists">
+                                <li class="service-list">
+                                    <span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                                            fill="currentColor" class="w-6 h-6">
+                                            <path fill-rule="evenodd"
+                                                d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z"
+                                                clip-rule="evenodd" />
+                                        </svg></span>
+                                    <span> Campanhas de Anúncios (Google/Meta) </span>
+                                </li>
+                                <li class="service-list">
+                                    <span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                                            fill="currentColor" class="w-6 h-6">
+                                            <path fill-rule="evenodd"
+                                                d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z"
+                                                clip-rule="evenodd" />
+                                        </svg></span>
+                                    <span> Otimização para Buscadores (SEO) </span>
+                                </li>
+                                <li class="service-list">
+                                    <span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                                            fill="currentColor" class="w-6 h-6">
+                                            <path fill-rule="evenodd"
+                                                d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z"
+                                                clip-rule="evenodd" />
+                                        </svg></span>
+                                    <span> Análise e Relatórios de Performance </span>
+                                </li>
+                            </ul>
+                        </div>
+                        <div class="service-left-right">
+                            <p class="service-desp">Não adianta ter o melhor site se ninguém o encontra. Gerenciamos
+                                campanhas de tráfego pago e SEO para atrair um fluxo constante de clientes qualificados
+                                até a sua porta digital.</p>
+                            <div class="service-btn-content">
+                                <a href="#contact" class="more-btn">
+                                    <span class="morebtn-text"> Ver Detalhes </span>
+                                    <span class="primary-icon-anim"><svg xmlns="http://www.w3.org/2000/svg" fill="none"
+                                            viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" />
+                                        </svg></span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="service-stroke-number">03</div>
+                </div>
+
+                <div class="service-card fade-in">
+                    <img class="service-hover-img" src="https://placehold.co/400x400/111827/14b8a6?text=❤️"
+                        alt="Imagem de Conteúdo e Redes Sociais" />
+                    <div class="service-card-item">
+                        <div class="service-left-info">
+                            <h4 class="service-title">Conteúdo e Redes Sociais</h4>
+                            <ul class="service-lists">
+                                <li class="service-list">
+                                    <span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                                            fill="currentColor" class="w-6 h-6">
+                                            <path fill-rule="evenodd"
+                                                d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z"
+                                                clip-rule="evenodd" />
+                                        </svg></span>
+                                    <span> Planejamento de Conteúdo Estratégico </span>
+                                </li>
+                                <li class="service-list">
+                                    <span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                                            fill="currentColor" class="w-6 h-6">
+                                            <path fill-rule="evenodd"
+                                                d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z"
+                                                clip-rule="evenodd" />
+                                        </svg></span>
+                                    <span> Gestão de Perfis e Comunidades </span>
+                                </li>
+                                <li class="service-list">
+                                    <span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                                            fill="currentColor" class="w-6 h-6">
+                                            <path fill-rule="evenodd"
+                                                d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z"
+                                                clip-rule="evenodd" />
+                                        </svg></span>
+                                    <span> Criação de Posts, Vídeos e Artigos </span>
+                                </li>
+                            </ul>
+                        </div>
+                        <div class="service-left-right">
+                            <p class="service-desp">Conectamos sua marca ao seu público de forma autêntica. Criamos e
+                                gerenciamos conteúdo que engaja, constrói lealdade e transforma seguidores em defensores
+                                da sua marca.</p>
+                            <div class="service-btn-content">
+                                <a href="#contact" class="more-btn">
+                                    <span class="morebtn-text"> Ver Detalhes </span>
+                                    <span class="primary-icon-anim"><svg xmlns="http://www.w3.org/2000/svg" fill="none"
+                                            viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" />
+                                        </svg></span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="service-stroke-number">04</div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- Seção de Cases de Sucesso -->
+        <section id="cases" class="py-20 bg-gray-900">
+            <div class="container mx-auto px-6">
+                <div class="text-center mb-16 fade-in">
+                    <h2 class="text-4xl md:text-5xl font-bold text-white">Resultados que <span
+                            class="text-gradient">Inspiram</span></h2>
+                    <p class="text-lg text-gray-400 mt-4 max-w-2xl mx-auto">Veja na prática como ajudamos outros
+                        lojistas a alcançarem o sucesso.</p>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+                    <!-- Case 1 -->
+                    <div class="bg-gray-800/50 rounded-2xl card-hover fade-in group">
+                        <div class="relative">
+                            <!-- IMPORTANTE: Substitua a URL da imagem abaixo pela thumbnail do seu vídeo -->
+                            <img src="https://placehold.co/600x400/1f2937/22d3ee?text=Cliente+1"
+                                alt="Thumbnail do depoimento em vídeo do cliente Moda Chic"
+                                class="rounded-t-2xl w-full">
+                            <div class="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center">
+                                <!-- IMPORTANTE: Substitua a URL do YouTube/Vimeo abaixo pelo link do seu vídeo -->
+                                <button @click="$store.videoModal.open('https://www.youtube.com/embed/dQw4w9WgXcQ')"
+                                    class="bg-white/20 backdrop-blur-sm rounded-full h-20 w-20 flex items-center justify-center transform group-hover:scale-110 transition-transform duration-300">
+                                    <svg class="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                        <path
+                                            d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z">
+                                        </path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="p-8">
+                            <p class="text-gray-400 mb-4 italic">"Depois que a JC digital Agency criou nosso e-commerce,
+                                nossas vendas online explodiram. Foi o melhor investimento que fizemos!"</p>
+                            <p class="font-bold text-white">- Proprietária, Moda Chic</p>
+                        </div>
+                    </div>
+                    <!-- Case 2 -->
+                    <div class="bg-gray-800/50 rounded-2xl card-hover fade-in group" style="transition-delay: 200ms;">
+                        <div class="relative">
+                            <!-- IMPORTANTE: Substitua a URL da imagem abaixo pela thumbnail do seu vídeo -->
+                            <img src="https://placehold.co/600x400/1f2937/14b8a6?text=Cliente+2"
+                                alt="Thumbnail do depoimento em vídeo do cliente Casa & Decor"
+                                class="rounded-t-2xl w-full">
+                            <div class="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center">
+                                <!-- IMPORTANTE: Substitua a URL do YouTube/Vimeo abaixo pelo link do seu vídeo -->
+                                <button @click="$store.videoModal.open('https://www.youtube.com/embed/dQw4w9WgXcQ')"
+                                    class="bg-white/20 backdrop-blur-sm rounded-full h-20 w-20 flex items-center justify-center transform group-hover:scale-110 transition-transform duration-300">
+                                    <svg class="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                        <path
+                                            d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z">
+                                        </path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="p-8">
+                            <p class="text-gray-400 mb-4 italic">"O trabalho de social media foi impecável. Nossa marca
+                                ganhou muito mais visibilidade e os clientes chegam na loja falando que viram no
+                                Instagram."</p>
+                            <p class="font-bold text-white">- Gerente, Casa & Decor</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Seção do Curso -->
+        <section id="course" class="py-20">
+            <div class="container mx-auto px-6">
+                <div
+                    class="bg-gray-800/50 rounded-2xl p-8 md:p-12 flex flex-col lg:flex-row items-center gap-8 fade-in">
+                    <div class="lg:w-1/2 text-center lg:text-left">
+                        <h2 class="text-4xl md:text-5xl font-bold text-white mb-4">Torne-se um <span
+                                class="text-gradient">Empreendedor Digital</span></h2>
+                        <p class="text-lg text-gray-300 mb-6">Aprenda o passo a passo para criar sua loja online do
+                            zero, sem precisar de estoque, e comece a vender todos os dias.</p>
+                        <a href="#"
+                            class="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-8 rounded-full transition-transform duration-300 ease-in-out hover:scale-105 inline-block glow-effect">
+                            Quero Garantir Minha Vaga
+                        </a>
+                    </div>
+                    <div class="lg:w-1/2">
+                        <div class="bg-gray-700/50 p-6 rounded-xl">
+                            <h4 class="text-2xl font-bold text-white mb-4">O que você vai aprender:</h4>
+                            <ul class="space-y-3 text-gray-300">
+                                <li class="flex items-start"><span
+                                        class="text-cyan-400 mr-3 mt-1">✓</span><span>Encontrar um nicho lucrativo e
+                                        produtos vencedores.</span></li>
+                                <li class="flex items-start"><span class="text-cyan-400 mr-3 mt-1">✓</span><span>Criar
+                                        sua loja online profissional do zero, sem programar.</span></li>
+                                <li class="flex items-start"><span class="text-cyan-400 mr-3 mt-1">✓</span><span>Atrair
+                                        clientes com anúncios no Instagram e Facebook.</span></li>
+                                <li class="flex items-start"><span
+                                        class="text-cyan-400 mr-3 mt-1">✓</span><span>Gerenciar pedidos e fornecedores
+                                        no modelo de dropshipping.</span></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Seção Ferramentas IA -->
+        <section id="ai-tools" class="py-20">
+            <div class="container mx-auto px-6">
+                <div class="text-center mb-16 fade-in">
+                    <h2 class="text-4xl md:text-5xl font-bold text-white">Nossa Tecnologia <span
+                            class="text-gradient">Trabalhando para Você</span></h2>
+                    <p class="text-lg text-gray-400 mt-4 max-w-3xl mx-auto">Use nossas ferramentas com Inteligência
+                        Artificial para ter uma prévia do que podemos fazer pelo seu negócio.</p>
+                </div>
+
+                <!-- Ferramenta Principal: Quiz de Maturidade Digital -->
+                <div x-data="digitalQuiz" class="bg-gray-800/50 p-8 rounded-2xl border border-gray-700 mb-12 fade-in">
+                    <div x-show="step < 4">
+                        <h3 class="text-3xl font-bold text-white mb-2 text-center">✨ Quiz de Maturidade Digital</h3>
+                        <p class="text-gray-400 mb-6 text-center max-w-2xl mx-auto">Descubra o nível digital da sua loja
+                            e receba uma análise gratuita em 1 minuto.</p>
+                        <!-- Barra de Progresso -->
+                        <div class="w-full bg-gray-700 rounded-full h-2.5 mb-6">
+                            <div class="bg-cyan-500 h-2.5 rounded-full" :style="`width: ${(step - 1) / 3 * 100}%`">
+                            </div>
+                        </div>
+                        <!-- Perguntas -->
+                        <template x-for="(q, index) in questions" :key="index">
+                            <div x-show="step === index + 1">
+                                <p class="text-xl text-center text-white mb-6" x-text="q.text"></p>
+                                <div class="flex flex-col md:flex-row justify-center gap-4">
+                                    <template x-for="option in q.options">
+                                        <button @click="nextStep(q.id, option.points, option.text)"
+                                            class="bg-gray-700 hover:bg-cyan-600 text-white font-bold py-3 px-6 rounded-lg transition-colors w-full md:w-auto"
+                                            x-text="option.text"></button>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                    <!-- Resultado -->
+                    <div x-show="step === 4">
+                        <h3 class="text-3xl font-bold text-white mb-2 text-center">Sua Análise está Pronta!</h3>
+                        <div x-show="error" class="mt-4 text-center text-red-400" x-text="error"></div>
+                        <div x-show="isLoading" class="text-center mt-4 text-gray-300">Analisando...</div>
+                        <div x-show="!isLoading && result" class="text-center mt-6">
+                            <button @click="$store.aiModal.open('Análise de Maturidade Digital', result)"
+                                class="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-6 rounded-full text-sm">Ver
+                                Minha Análise</button>
+                            <button @click="reset()"
+                                class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-6 rounded-full text-sm ml-4">Refazer
+                                Quiz</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Ferramenta de Gerador de Logo -->
+                <div x-data="logoGenerator" class="bg-gray-800/50 p-8 rounded-2xl border border-gray-700 mb-12 fade-in">
+                    <!-- Formulário de Geração -->
+                    <div x-show="view === 'form'">
+                        <h3 class="text-3xl font-bold text-white mb-2 text-center">✨ Crie o Logo da Sua Nova Marca com
+                            IA</h3>
+                        <p class="text-gray-400 mb-6 text-center max-w-2xl mx-auto">Dê o primeiro passo para criar sua
+                            marca. Descreva seu negócio e nossa IA criará uma sugestão de logo para você.</p>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
+                            <div>
+                                <label for="businessName" class="block text-sm font-medium text-gray-300 mb-2">Nome do
+                                    Negócio</label>
+                                <input type="text" id="businessName" x-model="formData.businessName"
+                                    class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition"
+                                    placeholder="Ex: Sapataria da Ana">
+                            </div>
+                            <div>
+                                <label for="industry" class="block text-sm font-medium text-gray-300 mb-2">Ramo /
+                                    Indústria</label>
+                                <input type="text" id="industry" x-model="formData.industry"
+                                    class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition"
+                                    placeholder="Ex: Calçados femininos">
+                            </div>
+                            <div>
+                                <label for="style" class="block text-sm font-medium text-gray-300 mb-2">Estilo do
+                                    Logo</label>
+                                <select id="style" x-model="formData.style"
+                                    class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition">
+                                    <option value="minimalista">Minimalista</option>
+                                    <option value="moderno">Moderno</option>
+                                    <option value="elegante">Elegante</option>
+                                    <option value="divertido">Divertido</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="text-center mt-6">
+                            <button @click="generateLogo()" :disabled="isLoading"
+                                class="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-10 rounded-full transition-all duration-300 ease-in-out hover:scale-105 w-full sm:w-auto glow-effect disabled:bg-gray-500 disabled:scale-100 disabled:cursor-not-allowed">
+                                <span x-show="!isLoading">Gerar Meu Logo</span>
+                                <span x-show="isLoading">Criando...</span>
+                            </button>
+                        </div>
+                        <div x-show="error" class="mt-4 text-center text-red-400" x-text="error"></div>
+                    </div>
+                    <!-- Carregando -->
+                    <div x-show="view === 'loading'" class="text-center text-gray-300">
+                        <p>Nossa IA está desenhando seu logo... Isso pode levar alguns segundos.</p>
+                    </div>
+                    <!-- Revelar Logo -->
+                    <div x-show="view === 'reveal'">
+                        <h3 class="text-3xl font-bold text-white mb-2 text-center">Seu Logo está Pronto!</h3>
+                        <p class="text-gray-400 mb-6 text-center max-w-2xl mx-auto">Para revelar seu logo e conversar
+                            sobre os próximos passos, preencha seus dados abaixo.</p>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg mx-auto">
+                            <input type="text" x-model="formData.contactName" placeholder="Seu Nome" required
+                                class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition">
+                            <input type="tel" x-model="formData.contactPhone" placeholder="Seu WhatsApp (com DDD)"
+                                required
+                                class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition">
+                        </div>
+                        <div class="text-center mt-4">
+                            <button @click="revealAndContact()"
+                                class="bg-teal-500 hover:bg-teal-600 text-white font-bold py-3 px-10 rounded-full transition-transform duration-300 ease-in-out hover:scale-105">
+                                Enviar Contato e Revelar Meu Logo
+                            </button>
+                        </div>
+                        <div x-show="error" class="mt-4 text-center text-red-400" x-text="error"></div>
+                        <div x-show="logoRevealed" class="mt-8 text-center">
+                            <h4 class="text-2xl font-bold text-white mb-4">Aqui está seu logo!</h4>
+                            <img :src="generatedLogoUrl" class="max-w-xs mx-auto rounded-lg shadow-lg bg-white p-4">
+                            <button @click="reset()"
+                                class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-6 rounded-full text-sm mt-6">Criar
+                                Outro Logo</button>
+                        </div>
+                    </div>
+                </div>
+
+                <h4 class="text-2xl font-bold text-white text-center mb-8 fade-in">Kit de Ferramentas Rápidas de IA</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+
+                    <!-- Ferramenta: Gerador de Ideias de Negócio -->
+                    <div x-data="nicheFinder"
+                        class="bg-gray-800/50 p-6 rounded-2xl border border-gray-700 flex flex-col fade-in"
+                        style="transition-delay: 100ms;">
+                        <h3 class="text-xl font-bold text-white mb-2">✨ Gerador de Ideias de Negócio</h3>
+                        <p class="text-gray-400 mb-4 flex-grow text-sm">Sem ideias de nicho ou nome? Comece por aqui.
+                        </p>
+                        <div>
+                            <input type="text" x-model="interestArea" @keydown.enter="findNiche()"
+                                class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-2 text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition"
+                                placeholder="Sua área de interesse (ex: moda)">
+                        </div>
+                        <div class="text-center mt-4">
+                            <button @click="findNiche()" :disabled="isLoading"
+                                class="bg-teal-500 hover:bg-teal-600 text-white font-bold py-2 px-6 rounded-full text-sm transition-all duration-300 ease-in-out hover:scale-105 w-full glow-effect disabled:bg-gray-500 disabled:scale-100 disabled:cursor-not-allowed">
+                                <span x-show="!isLoading">Gerar Ideias</span>
+                                <span x-show="isLoading">...</span>
+                            </button>
+                        </div>
+                        <div x-show="error" class="mt-2 text-center text-red-400 text-xs" x-text="error"></div>
+                    </div>
+
+                    <!-- Ferramenta: Gerador de Descrição de Produto -->
+                    <div x-data="productDescriber"
+                        class="bg-gray-800/50 p-6 rounded-2xl border border-gray-700 flex flex-col fade-in"
+                        style="transition-delay: 200ms;">
+                        <h3 class="text-xl font-bold text-white mb-2">✨ Descrição de Produto</h3>
+                        <p class="text-gray-400 mb-4 flex-grow text-sm">Crie descrições de produtos que vendem para seu
+                            e-commerce.</p>
+                        <div class="space-y-2">
+                            <input type="text" x-model="productName"
+                                class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-2 text-sm focus:ring-2 focus:ring-cyan-600 focus:border-cyan-600 transition"
+                                placeholder="Nome do produto">
+                            <textarea x-model="keyFeatures" @keydown.enter.prevent="generateDescription()"
+                                class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-2 text-sm focus:ring-2 focus:ring-cyan-600 focus:border-cyan-600 transition"
+                                placeholder="Principais características" rows="2"></textarea>
+                        </div>
+                        <div class="text-center mt-4">
+                            <button @click="generateDescription()" :disabled="isLoading"
+                                class="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-6 rounded-full text-sm transition-all duration-300 ease-in-out hover:scale-105 w-full glow-effect disabled:bg-gray-500 disabled:scale-100 disabled:cursor-not-allowed">
+                                <span x-show="!isLoading">Descrever</span>
+                                <span x-show="isLoading">...</span>
+                            </button>
+                        </div>
+                        <div x-show="error" class="mt-2 text-center text-red-400 text-xs" x-text="error"></div>
+                    </div>
+
+                    <!-- Ferramenta: Gerador de Anúncios -->
+                    <div x-data="adGenerator"
+                        class="bg-gray-800/50 p-6 rounded-2xl border border-gray-700 flex flex-col fade-in"
+                        style="transition-delay: 300ms;">
+                        <h3 class="text-xl font-bold text-white mb-2">✨ Gerador de Anúncios</h3>
+                        <p class="text-gray-400 mb-4 flex-grow text-sm">Crie textos de anúncios que vendem em segundos.
+                        </p>
+                        <div class="space-y-2">
+                            <input type="text" x-model="productName"
+                                class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-2 text-sm focus:ring-2 focus:ring-teal-600 focus:border-teal-600 transition"
+                                placeholder="Nome do produto">
+                            <input type="text" x-model="targetAudience" @keydown.enter="generateAd()"
+                                class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-2 text-sm focus:ring-2 focus:ring-teal-600 focus:border-teal-600 transition"
+                                placeholder="Público-alvo">
+                        </div>
+                        <div class="text-center mt-4">
+                            <button @click="generateAd()" :disabled="isLoading"
+                                class="bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-6 rounded-full text-sm transition-all duration-300 ease-in-out hover:scale-105 w-full glow-effect disabled:bg-gray-500 disabled:scale-100 disabled:cursor-not-allowed">
+                                <span x-show="!isLoading">Criar</span>
+                                <span x-show="isLoading">...</span>
+                            </button>
+                        </div>
+                        <div x-show="error" class="mt-2 text-center text-red-400 text-xs" x-text="error"></div>
+                    </div>
+
+                    <!-- Ferramenta: Estratégia de Hashtags -->
+                    <div x-data="hashtagStrategist"
+                        class="bg-gray-800/50 p-6 rounded-2xl border border-gray-700 flex flex-col fade-in"
+                        style="transition-delay: 400ms;">
+                        <h3 class="text-xl font-bold text-white mb-2">✨ Estratégia de Hashtags</h3>
+                        <p class="text-gray-400 mb-4 flex-grow text-sm">Receba uma estratégia de hashtags para seu post.
+                        </p>
+                        <div>
+                            <input type="text" x-model="postTopic" @keydown.enter="generateHashtags()"
+                                class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-2 text-sm focus:ring-2 focus:ring-cyan-700 focus:border-cyan-700 transition"
+                                placeholder="Tema do post">
+                        </div>
+                        <div class="text-center mt-4">
+                            <button @click="generateHashtags()" :disabled="isLoading"
+                                class="bg-cyan-700 hover:bg-cyan-800 text-white font-bold py-2 px-6 rounded-full text-sm transition-all duration-300 ease-in-out hover:scale-105 w-full glow-effect disabled:bg-gray-500 disabled:scale-100 disabled:cursor-not-allowed">
+                                <span x-show="!isLoading">Gerar</span>
+                                <span x-show="isLoading">...</span>
+                            </button>
+                        </div>
+                        <div x-show="error" class="mt-2 text-center text-red-400 text-xs" x-text="error"></div>
+                    </div>
+
+                    <!-- Ferramenta: Gerador de Ideias -->
+                    <div x-data="ideaGenerator"
+                        class="bg-gray-800/50 p-6 rounded-2xl border border-gray-700 flex flex-col fade-in"
+                        style="transition-delay: 500ms;">
+                        <h3 class="text-xl font-bold text-white mb-2">✨ Gerador de Ideias</h3>
+                        <p class="text-gray-400 mb-4 flex-grow text-sm">Sem ideias para posts? Diga-nos o tipo da sua
+                            loja.</p>
+                        <div>
+                            <input type="text" x-model="storeType" @keydown.enter="generateIdeas()"
+                                class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-2 text-sm focus:ring-2 focus:ring-teal-700 focus:border-teal-700 transition"
+                                placeholder="Ex: Cafeteria">
+                        </div>
+                        <div class="text-center mt-4">
+                            <button @click="generateIdeas()" :disabled="isLoading"
+                                class="bg-teal-700 hover:bg-teal-800 text-white font-bold py-2 px-6 rounded-full text-sm transition-all duration-300 ease-in-out hover:scale-105 w-full glow-effect disabled:bg-gray-500 disabled:scale-100 disabled:cursor-not-allowed">
+                                <span x-show="!isLoading">Gerar</span>
+                                <span x-show="isLoading">...</span>
+                            </button>
+                        </div>
+                        <div x-show="error" class="mt-2 text-center text-red-400 text-xs" x-text="error"></div>
+                    </div>
+
+                    <!-- Ferramenta: Analisador de Perfil -->
+                    <div x-data="profileAnalyzer"
+                        class="bg-gray-800/50 p-6 rounded-2xl border border-gray-700 flex flex-col fade-in"
+                        style="transition-delay: 600ms;">
+                        <h3 class="text-xl font-bold text-white mb-2">✨ Analisador de Perfil</h3>
+                        <p class="text-gray-400 mb-4 flex-grow text-sm">Receba uma análise rápida do seu perfil do
+                            Instagram.</p>
+                        <div class="space-y-2">
+                            <input type="text" x-model="instagramHandle"
+                                class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-2 text-sm focus:ring-2 focus:ring-cyan-800 focus:border-cyan-800 transition"
+                                placeholder="@nomedasualoja">
+                            <input type="text" x-model="businessDescription" @keydown.enter="analyzeProfile()"
+                                class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-2 text-sm focus:ring-2 focus:ring-cyan-800 focus:border-cyan-800 transition"
+                                placeholder="Descrição da loja">
+                        </div>
+                        <div class="text-center mt-4">
+                            <button @click="analyzeProfile()" :disabled="isLoading"
+                                class="bg-cyan-800 hover:bg-cyan-900 text-white font-bold py-2 px-6 rounded-full text-sm transition-all duration-300 ease-in-out hover:scale-105 w-full glow-effect disabled:bg-gray-500 disabled:scale-100 disabled:cursor-not-allowed">
+                                <span x-show="!isLoading">Analisar</span>
+                                <span x-show="isLoading">...</span>
+                            </button>
+                        </div>
+                        <div x-show="error" class="mt-2 text-center text-red-400 text-xs" x-text="error"></div>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+
+        <!-- Seção Sobre Nós -->
+        <section id="about" class="py-20 bg-gray-900">
+            <div class="container mx-auto px-6">
+                <div class="flex flex-col lg:flex-row items-center gap-12 fade-in">
+                    <div class="lg:w-1/2">
+                        <h2 class="text-4xl md:text-5xl font-bold text-white mb-6">Nossa Missão é <span
+                                class="text-gradient">Democratizar o Empreendedorismo</span></h2>
+                        <p class="text-gray-400 mb-4 text-lg">A JC digital Agency nasceu de um propósito claro: ajudar
+                            pessoas a realizarem o sonho de ter seu próprio negócio na internet. Vimos muitos talentos
+                            com ideias incríveis, mas que esbarravam em barreiras como o alto custo de estoque e a
+                            complexidade do marketing digital.</p>
+                        <p class="text-gray-400 mb-6 text-lg">Por isso, nossa especialidade vai além de criar sites e
+                            gerenciar redes sociais. Nós ensinamos e implementamos o caminho para você <span
+                                class="text-white font-semibold">criar a sua loja dos sonhos sem possuir estoque</span>,
+                            utilizando estratégias de dropshipping e marketing de performance. Nós não apenas
+                            construímos sua presença online, nós construímos seu negócio junto com você.</p>
+                        <a href="#contact"
+                            class="text-cyan-400 font-semibold hover:text-cyan-300 transition-colors">Vamos construir
+                            seu sonho juntos? →</a>
+                    </div>
+                    <div class="lg:w-1/2">
+                        <!-- IMPORTANTE: Salve seu arquivo de logo como 'logo.png' na mesma pasta deste arquivo HTML. -->
+                        <img src="logo.png" alt="Logo da JC digital Agency"
+                            class="rounded-2xl shadow-2xl w-full max-w-md mx-auto h-auto glow-effect"
+                            onerror="this.style.display='none';">
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Seção de Contato -->
+        <section id="contact" class="py-20" x-data="contactForm">
+            <div class="container mx-auto px-6">
+                <div class="text-center mb-12 fade-in">
+                    <h2 class="text-4xl md:text-5xl font-bold text-white">Pronto para vender <span
+                            class="text-gradient">online todos os dias?</span></h2>
+                    <p class="text-lg text-gray-400 mt-4 max-w-2xl mx-auto">Vamos conversar sobre como um e-commerce e
+                        uma gestão de redes sociais profissional podem transformar os resultados da sua loja.</p>
+                </div>
+                <div class="max-w-2xl mx-auto bg-gray-800 p-8 rounded-2xl border border-gray-700 fade-in">
+                    <form @submit.prevent="submitToWhatsApp">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
+                            <div>
+                                <label for="name" class="block text-sm font-medium text-gray-300 mb-2">Nome</label>
+                                <input type="text" name="name" id="name" x-model="formData.name" required
+                                    class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition"
+                                    placeholder="Seu nome completo">
+                            </div>
+                            <div>
+                                <label for="email" class="block text-sm font-medium text-gray-300 mb-2">E-mail</label>
+                                <input type="email" name="email" id="email" x-model="formData.email" required
+                                    class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition"
+                                    placeholder="seu.email@empresa.com">
+                            </div>
+                        </div>
+                        <div class="mb-6">
+                            <label for="message" class="block text-sm font-medium text-gray-300 mb-2">Nome da sua Loja e
+                                @ do Instagram (se tiver)</label>
+                            <textarea name="message" id="message" x-model="formData.message" required rows="4"
+                                class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition"
+                                placeholder="Conte-nos um pouco sobre sua loja e seus objetivos..."></textarea>
+                        </div>
+                        <div class="text-center">
+                            <button type="submit"
+                                class="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-10 rounded-full transition-transform duration-300 ease-in-out hover:scale-105 w-full sm:w-auto glow-effect">
+                                Agendar Conversa Estratégica
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Rodapé -->
+    <footer class="bg-gray-900 border-t border-gray-800">
+        <div class="container mx-auto px-6 py-8 text-center text-gray-400">
+            <div class="flex justify-center space-x-6 mb-4">
+                <a href="#" target="_blank" class="hover:text-cyan-400 transition-colors">
+                    <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path fill-rule="evenodd"
+                            d="M22 12c0-5.523-4.477-10-10-10S2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.878v-6.987h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.988C18.343 21.128 22 16.991 22 12z"
+                            clip-rule="evenodd" />
+                    </svg>
+                </a>
+                <a href="#" target="_blank" class="hover:text-cyan-400 transition-colors">
+                    <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path fill-rule="evenodd"
+                            d="M12.315 2c2.43 0 2.784.013 3.808.06 1.064.049 1.791.218 2.427.465a4.902 4.902 0 011.772 1.153 4.902 4.902 0 011.153 1.772c.247.636.416 1.363.465 2.427.048 1.024.06 1.378.06 3.808s-.012 2.784-.06 3.808c-.049 1.064-.218 1.791-.465 2.427a4.902 4.902 0 01-1.153 1.772 4.902 4.902 0 01-1.772 1.153c-.636.247-1.363.416-2.427.465-1.024.048-1.378.06-3.808.06s-2.784-.012-3.808-.06c-1.064-.049-1.791-.218-2.427-.465a4.902 4.902 0 01-1.772-1.153 4.902 4.902 0 01-1.153-1.772c-.247-.636-.416-1.363-.465-2.427-.048-1.024-.06-1.378-.06-3.808s.012-2.784.06-3.808c.049-1.064.218-1.791.465-2.427a4.902 4.902 0 011.153-1.772A4.902 4.902 0 016.343 2.525c.636-.247 1.363-.416 2.427-.465C9.793 2.013 10.147 2 12.315 2zm-1.161 2.066c-1.04.048-1.696.2-2.26.417a2.898 2.898 0 00-1.066.666 2.898 2.898 0 00-.666 1.066c-.217.564-.37 1.22-.417 2.26-.048 1.024-.06 1.35-.06 3.528s.012 2.504.06 3.528c.048 1.04.2 1.696.417 2.26a2.898 2.898 0 00.666 1.066 2.898 2.898 0 001.066.666c.564.217 1.22.37 2.26.417 1.024.048 1.35.06 3.528.06s2.504-.012 3.528-.06c1.04-.048 1.696-.2 2.26-.417a2.898 2.898 0 001.066-.666 2.898 2.898 0 00.666-1.066c.217-.564.37-1.22.417-2.26.048-1.024.06-1.35.06-3.528s-.012-2.504-.06-3.528c-.048-1.04-.2-1.696-.417-2.26a2.898 2.898 0 00-.666-1.066 2.898 2.898 0 00-1.066-.666c-.564-.217-1.22-.37-2.26-.417-1.024-.048-1.35-.06-3.528-.06s-2.504.012-3.528.06zm4.928 2.16a1.28 1.28 0 100 2.56 1.28 1.28 0 000-2.56zm-4.66 2.31a3.882 3.882 0 107.764 0 3.882 3.882 0 00-7.764 0zm1.942 0a1.942 1.942 0 113.884 0 1.942 1.942 0 01-3.884 0z"
+                            clip-rule="evenodd" />
+                    </svg>
+                </a>
+                <a href="https://wa.me/5511999998888" target="_blank" class="hover:text-cyan-400 transition-colors">
+                    <!-- IMPORTANTE: Substitua '5511999998888' pelo seu número -->
+                    <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                            d="M16.632 18.868c-.378.084-.816.12-1.296.12-2.964 0-5.4-2.436-5.4-5.4s2.436-5.4 5.4-5.4c.48 0 .918.036 1.296.12a6.57 6.57 0 014.248 5.28 6.57 6.57 0 01-4.248 5.28zm-3.324-1.308a3.6 3.6 0 100-7.2 3.6 3.6 0 000 7.2zm-6.996 2.16c0-3.324 2.676-6 6-6s6 2.676 6 6c0 1.56-.6 3-1.596 4.056a.6.6 0 01-.864.108l-1.08-.864a4.788 4.788 0 001.536-3.3c0-2.652-2.148-4.8-4.8-4.8s-4.8 2.148-4.8 4.8c0 1.296.516 2.484 1.38 3.372l-1.044.828a.6.6 0 01-.876-.096A5.952 5.952 0 016.312 19.72z" />
+                    </svg>
+                </a>
+            </div>
+            <p>&copy; 2024 JC digital Agency. Todos os direitos reservados.</p>
+            <p class="text-sm mt-2">Ajudando lojistas a prosperar no digital.</p>
+        </div>
+    </footer>
+
+    <!-- Botão Flutuante do WhatsApp -->
+    <a href="https://wa.me/5511999998888" target="_blank"
+        class="fixed bottom-6 right-6 bg-green-500 hover:bg-green-600 text-white rounded-full p-4 shadow-lg transition-transform hover:scale-110 z-40">
+        <!-- IMPORTANTE: Substitua '5511999998888' pelo seu número de WhatsApp com código do país e DDD. -->
+        <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+                d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.79.46 3.48 1.32 4.95L2 22l5.25-1.38c1.41.81 3.02 1.3 4.79 1.3h.01c5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zM9.53 8.5c.24-.12.55-.2 1.76-.12 1.12.07 1.37.73 1.42 1.59.05.86-.29 1.95-.83 2.55-.54.6-1.29.9-1.62 1.07-.33.17-.56.24-.83.15-.27-.09-.98-.36-1.87-1.15-.9-.79-1.48-1.77-1.62-2.07-.14-.3-.02-.46.09-.58.11-.12.24-.15.36-.15.12 0 .24.03.33.03.09 0 .14-.02.2-.08.06-.06.45-0.53.5-0.59.04-.06.02-.12-.03-.18s-.24-.29-.33-.39c-.09-.1-.18-.12-.27-.12-.09 0-.2.03-.29.03-.09 0-.24.06-.36.18-.12.12-.48.45-.48.45s-.36.42-.36.9c0 .48.36.96.42 1.02.06.06.73.99 1.77 1.76 1.04.77 1.42.93 1.83.99.41.06.86.03 1.14-.15.28-.18.84-.56.96-.99.12-.42.12-.79.09-.84s-.09-.09-.18-.15c-.09-.06-.56-.27-.68-.33s-.2-.09-.29.09c-.09.18-.24.29-.29.33-.05.04-.09.06-.18.03s-.36-.12-.5-.21c-.14-.09-.12-.15-.12-.15s.12-.14.18-.2z" />
+        </svg>
+    </a>
+
+    <!-- Modal para Resultados da IA -->
+    <div x-show="$store.aiModal.show" x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0"
+        x-transition:enter-end="opacity-100" x-transition:leave="ease-in duration-200"
+        x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+        class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 z-50"
+        @click.self="$store.aiModal.close()">
+        <div x-show="$store.aiModal.show" x-transition:enter="ease-out duration-300"
+            x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
+            x-transition:leave="ease-in duration-200" x-transition:leave-start="opacity-100 scale-100"
+            x-transition:leave-end="opacity-0 scale-95"
+            class="bg-gray-800 rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center p-4 border-b border-gray-700">
+                <h3 class="text-xl font-bold text-white" x-text="$store.aiModal.title"></h3>
+                <button @click="$store.aiModal.close()" class="text-gray-400 hover:text-white">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                        </path>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto" x-html="$store.aiModal.content"></div>
+            <div class="p-4 border-t border-gray-700 mt-auto flex items-center gap-4">
+                <button @click="$store.aiModal.copyToClipboard()"
+                    class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-lg w-full"
+                    x-text="$store.aiModal.copyText"></button>
+                <a x-show="$store.aiModal.title === 'Análise de Maturidade Digital'" href="#contact"
+                    @click="$store.aiModal.close()"
+                    class="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-lg w-full text-center">Quero
+                    Melhorar Meus Resultados</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Vídeo -->
+    <div x-show="$store.videoModal.show" x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0"
+        x-transition:enter-end="opacity-100" x-transition:leave="ease-in duration-200"
+        x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+        class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50"
+        @click.self="$store.videoModal.close()">
+        <div class="relative w-full max-w-3xl">
+            <button @click="$store.videoModal.close()"
+                class="absolute -top-10 right-0 text-white text-3xl">&times;</button>
+            <div class="aspect-w-16 aspect-h-9">
+                <iframe :src="$store.videoModal.videoUrl" frameborder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowfullscreen class="w-full h-full"></iframe>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script do Particles.js -->
+    <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
+    <script>
+        // Scripts que dependem do DOM devem rodar após o carregamento
+        window.addEventListener('load', () => {
+            const preloader = document.getElementById('preloader');
+            const mainContent = document.querySelector('main');
+            let percent = 0;
+            const percentDiv = document.querySelector('.loading-percent');
+
+            const textSpans = document.querySelectorAll('.preloader-text');
+            let currentTextIndex = 0;
+
+            const textInterval = setInterval(() => {
+                textSpans.forEach(span => span.classList.remove('active'));
+                currentTextIndex = (currentTextIndex + 1) % textSpans.length;
+                textSpans[currentTextIndex].classList.add('active');
+            }, 1200);
+
+            let interval = setInterval(() => {
+                percent++;
+                if (percentDiv) {
+                    percentDiv.textContent = `${percent}%`;
+                }
+                if (percent >= 100) {
+                    clearInterval(interval);
+                    clearInterval(textInterval);
+                    if (preloader) {
+                        preloader.style.opacity = '0';
+                        mainContent.style.opacity = '1';
+                        setTimeout(() => {
+                            preloader.style.display = 'none';
+                        }, 500);
+                    }
+                }
+            }, 30); // Duração total de 3 segundos
+        });
+
+        window.addEventListener('DOMContentLoaded', (event) => {
+            // Configuração do Particles.js para o fundo animado
+            particlesJS('particles-js', {
+                "particles": {
+                    "number": { "value": 60, "density": { "enable": true, "value_area": 800 } },
+                    "color": { "value": "#4a5568" }, // gray-600
+                    "shape": { "type": "circle" },
+                    "opacity": { "value": 0.5, "random": true },
+                    "size": { "value": 3, "random": true },
+                    "line_linked": { "enable": true, "distance": 150, "color": "#4a5568", "opacity": 0.4, "width": 1 },
+                    "move": { "enable": true, "speed": 1, "direction": "none", "random": false, "straight": false, "out_mode": "out" }
+                },
+                "interactivity": {
+                    "detect_on": "canvas",
+                    "events": {
+                        "onhover": { "enable": true, "mode": "grab" },
+                        "onclick": { "enable": true, "mode": "push" },
+                        "resize": true
+                    },
+                    "modes": {
+                        "grab": { "distance": 140, "line_linked": { "opacity": 1 } },
+                        "push": { "particles_nb": 4 }
+                    }
+                },
+                "retina_detect": true
+            });
+
+            // Script para efeito de fade-in ao rolar a página
+            const faders = document.querySelectorAll('.fade-in');
+            const appearOptions = {
+                threshold: 0.2,
+                rootMargin: "0px 0px -50px 0px"
+            };
+            const appearOnScroll = new IntersectionObserver(function (entries, observer) {
+                entries.forEach(entry => {
+                    if (!entry.isIntersecting) {
+                        return;
+                    } else {
+                        entry.target.classList.add('visible');
+                        observer.unobserve(entry.target);
+                    }
+                });
+            }, appearOptions);
+
+            faders.forEach(fader => {
+                appearOnScroll.observe(fader);
+            });
+        });
+
+        // Script de proteção
+        document.addEventListener('contextmenu', event => event.preventDefault());
+        document.onkeydown = function (e) {
+            if (e.keyCode == 123) { // F12
+                return false;
+            }
+            if (e.ctrlKey && e.shiftKey && e.keyCode == 'I'.charCodeAt(0)) { // Ctrl+Shift+I
+                return false;
+            }
+            if (e.ctrlKey && e.shiftKey && e.keyCode == 'C'.charCodeAt(0)) { // Ctrl+Shift+C
+                return false;
+            }
+            if (e.ctrlKey && e.shiftKey && e.keyCode == 'J'.charCodeAt(0)) { // Ctrl+Shift+J
+                return false;
+            }
+            if (e.ctrlKey && e.keyCode == 'U'.charCodeAt(0)) { // Ctrl+U
+                return false;
+            }
+        }
+    </script>
+
+</body>
+
+</html>
