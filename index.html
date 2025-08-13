@@ -32,7 +32,7 @@
         document.addEventListener('alpine:init', () => {
             // Função helper para chamar a API do Gemini (Texto)
             const callGemini = async (prompt) => {
-                const apiKey = "AIzaSyB2EfSIXYT1e2zcfaQxrV024cUx5QUvSog"; // A chave da API será injetada pelo ambiente
+                const apiKey = "AIzaSyB2EfSIXYT1e2zcfaQxrV024cUx5QUvSog"; // IMPORTANTE: Insira sua chave de API do Google AI Studio aqui
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
                 const response = await fetch(apiUrl, {
                     method: 'POST',
@@ -45,24 +45,6 @@
                     return data.candidates[0].content.parts[0].text;
                 }
                 throw new Error('A resposta da API não contém o conteúdo esperado.');
-            };
-
-            // Função helper para chamar a API de Imagem (Imagen)
-            const callImageAPI = async (prompt) => {
-                const payload = { instances: [{ prompt: prompt }], parameters: { "sampleCount": 1 } };
-                const apiKey = "AIzaSyA5iuExtCpgyAXc-1sAiIoZN3l4Emj1GDw";
-                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`;
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                if (!response.ok) throw new Error(`Erro na API de Imagem: ${response.statusText}`);
-                const result = await response.json();
-                if (result.predictions && result.predictions.length > 0 && result.predictions[0].bytesBase64Encoded) {
-                    return `data:image/png;base64,${result.predictions[0].bytesBase64Encoded}`;
-                }
-                throw new Error('A resposta da API de imagem não contém os dados esperados.');
             };
 
             // Store global para controlar o modal de resultados da IA
@@ -155,58 +137,6 @@
                     this.score = 0;
                     this.result = '';
                     this.error = '';
-                }
-            }));
-
-            // Componente para o Gerador de Logo
-            Alpine.data('logoGenerator', () => ({
-                view: 'form', // form, loading, reveal
-                formData: { businessName: '', industry: '', style: 'minimalista', contactName: '', contactPhone: '' },
-                generatedLogoUrl: '',
-                error: '',
-                isLoading: false,
-                logoRevealed: false,
-                async generateLogo() {
-                    if (!this.formData.businessName.trim() || !this.formData.industry.trim()) {
-                        this.error = 'Por favor, preencha o nome e o ramo do seu negócio.';
-                        return;
-                    }
-                    this.isLoading = true;
-                    this.error = '';
-                    this.view = 'loading';
-                    const prompt = `logo for a company called "${this.formData.businessName}", in the industry of "${this.formData.industry}". The desired style is: ${this.formData.style}. Vector art, clean, on a white background.`;
-                    try {
-                        this.generatedLogoUrl = await callImageAPI(prompt);
-                        this.view = 'reveal';
-                    } catch (e) {
-                        console.error(e);
-                        this.error = 'Desculpe, não foi possível gerar seu logo. Tente novamente.';
-                        this.view = 'form';
-                    } finally {
-                        this.isLoading = false;
-                    }
-                },
-                revealAndContact() {
-                    if (!this.formData.contactName.trim() || !this.formData.contactPhone.trim()) {
-                        this.error = 'Preencha seu nome e WhatsApp para revelar o logo.';
-                        return;
-                    }
-                    this.error = '';
-                    const yourNumber = '5511999998888';
-                    const text = `Olá! Gerei um logo no site da JC digital Agency!\n\nNome da Empresa: ${this.formData.businessName}\nMeu Nome: ${this.formData.contactName}\nMeu WhatsApp: ${this.formData.contactPhone}\n\nGostaria de ver meu logo e conversar sobre os próximos passos.`;
-                    const encodedText = encodeURIComponent(text);
-                    const whatsappUrl = `https://wa.me/${yourNumber}?text=${encodedText}`;
-                    window.open(whatsappUrl, '_blank');
-                    this.logoRevealed = true;
-                },
-                reset() {
-                    this.view = 'form';
-                    this.formData.businessName = '';
-                    this.formData.industry = '';
-                    this.formData.style = 'minimalista';
-                    this.generatedLogoUrl = '';
-                    this.error = '';
-                    this.logoRevealed = false;
                 }
             }));
 
