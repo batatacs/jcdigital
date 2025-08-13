@@ -225,7 +225,7 @@
                 },
                 submitToWhatsApp() {
                     // IMPORTANTE: Substitua '5511999998888' pelo seu número de WhatsApp com código do país e DDD.
-                    const yourNumber = '5511999998888';
+                    const yourNumber = '5519999188560';
 
                     const text = `Olá! Meu nome é ${this.formData.name}.\n\nE-mail: ${this.formData.email}\n\nLoja/Instagram: ${this.formData.message}\n\nTenho interesse nos serviços da JC digital Agency e gostaria de agendar uma conversa.`;
 
@@ -501,6 +501,7 @@
                 <span class="preloader-text">Analisando o futuro do seu negócio...</span>
                 <span class="preloader-text">Carregando sua jornada digital...</span>
             </div>
+            <div></div>
             <div class="loading-percent mt-4">0%</div>
         </div>
     </div>
@@ -510,7 +511,7 @@
         <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
             <a href="#" class="text-2xl font-bold text-white">
                 <!-- IMPORTANTE: Salve seu arquivo de logo como 'logo.png' na mesma pasta deste arquivo HTML. -->
-                <img src="logo.png" alt="JC digital Agency Logo" class="h-12 w-auto"
+                <img src="logo.jpg" alt="JC digital Agency Logo" class="h-12 w-auto"
                     onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
                 <span style="display:none;">JC<span class="text-cyan-400">.</span></span>
             </a>
@@ -876,7 +877,8 @@
                             <img src="https://placehold.co/600x400/1f2937/22d3ee?text=Cliente+1"
                                 alt="Thumbnail do depoimento em vídeo do cliente Moda Chic"
                                 class="rounded-t-2xl w-full">
-                            <div class="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center">
+                            <div
+                                class="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                                 <!-- IMPORTANTE: Substitua a URL do YouTube/Vimeo abaixo pelo link do seu vídeo -->
                                 <button @click="$store.videoModal.open('https://www.youtube.com/embed/dQw4w9WgXcQ')"
                                     class="bg-white/20 backdrop-blur-sm rounded-full h-20 w-20 flex items-center justify-center transform group-hover:scale-110 transition-transform duration-300">
@@ -901,7 +903,8 @@
                             <img src="https://placehold.co/600x400/1f2937/14b8a6?text=Cliente+2"
                                 alt="Thumbnail do depoimento em vídeo do cliente Casa & Decor"
                                 class="rounded-t-2xl w-full">
-                            <div class="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center">
+                            <div
+                                class="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                                 <!-- IMPORTANTE: Substitua a URL do YouTube/Vimeo abaixo pelo link do seu vídeo -->
                                 <button @click="$store.videoModal.open('https://www.youtube.com/embed/dQw4w9WgXcQ')"
                                     class="bg-white/20 backdrop-blur-sm rounded-full h-20 w-20 flex items-center justify-center transform group-hover:scale-110 transition-transform duration-300">
@@ -1265,6 +1268,43 @@
                 </div>
             </div>
         </section>
+
+        <!-- Seção de Vídeo da Agência -->
+        <section id="agency-video" class="py-20">
+            <div class="container mx-auto px-6 text-center">
+                <h2 class="text-3xl md:text-4xl font-bold text-white mb-4 fade-in">Conheça a <span
+                        class="text-gradient">JC digital Agency</span> por Dentro</h2>
+                <p class="text-lg text-gray-400 mb-8 max-w-2xl mx-auto fade-in" style="transition-delay: 200ms;">Clique
+                    no play e descubra como nossa paixão por tecnologia e empreendedorismo pode transformar sua ideia em
+                    um negócio de sucesso.</p>
+            </div>
+            <div class="w-full mt-8 fade-in" style="transition-delay: 400ms;">
+                <div class="relative w-full h-96 max-h-[60vh] overflow-hidden group bg-gray-900">
+                    <!-- Ajuste a altura conforme necessário -->
+                    <!-- Video Background -->
+                    <!-- IMPORTANTE: Substitua a URL abaixo pela URL do seu vídeo em formato .mp4 -->
+                    <video autoplay loop muted playsinline
+                        class="absolute top-1/2 left-1/2 w-auto min-w-full min-h-full max-w-none -translate-x-1/2 -translate-y-1/2 z-0 object-cover">
+                        <source
+                            src="https://assets.mixkit.co/videos/preview/mixkit-people-working-on-laptops-in-a-modern-office-4463-large.mp4"
+                            type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                    <div class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-10">
+                        <!-- IMPORTANTE: Substitua a URL do YouTube/Vimeo abaixo pelo link do seu vídeo completo -->
+                        <button @click="$store.videoModal.open('https://www.youtube.com/embed/dQw4w9WgXcQ')"
+                            class="bg-white/20 backdrop-blur-sm rounded-full h-24 w-24 flex items-center justify-center transform group-hover:scale-110 transition-transform duration-300">
+                            <svg class="w-12 h-12 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <path
+                                    d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z">
+                                </path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
 
         <!-- Seção de Contato -->
         <section id="contact" class="py-20" x-data="contactForm">
