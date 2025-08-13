@@ -32,7 +32,7 @@
         document.addEventListener('alpine:init', () => {
             // Função helper para chamar a API do Gemini (Texto)
             const callGemini = async (prompt) => {
-                const apiKey = "AIzaSyCFtMGKKG9oh4LVF6AG9l6qzVeta0a-DS0"; // A chave da API será injetada pelo ambiente
+                const apiKey = "AIzaSyB2EfSIXYT1e2zcfaQxrV024cUx5QUvSog"; // A chave da API será injetada pelo ambiente
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
                 const response = await fetch(apiUrl, {
                     method: 'POST',
@@ -50,7 +50,7 @@
             // Função helper para chamar a API de Imagem (Imagen)
             const callImageAPI = async (prompt) => {
                 const payload = { instances: [{ prompt: prompt }], parameters: { "sampleCount": 1 } };
-                const apiKey = "AIzaSyCFtMGKKG9oh4LVF6AG9l6qzVeta0a-DS0";
+                const apiKey = "AIzaSyB2EfSIXYT1e2zcfaQxrV024cUx5QUvSog";
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`;
                 const response = await fetch(apiUrl, {
                     method: 'POST',
