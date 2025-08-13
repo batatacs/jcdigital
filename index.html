@@ -32,7 +32,7 @@
         document.addEventListener('alpine:init', () => {
             // Função helper para chamar a API do Gemini (Texto)
             const callGemini = async (prompt) => {
-                const apiKey = "AIzaSyA5iuExtCpgyAXc-1sAiIoZN3l4Emj1GDw"; // A chave da API será injetada pelo ambiente
+                const apiKey = "AIzaSyB2EfSIXYT1e2zcfaQxrV024cUx5QUvSog"; // A chave da API será injetada pelo ambiente
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
                 const response = await fetch(apiUrl, {
                     method: 'POST',
